@@ -25,6 +25,7 @@ pub fn run() {
             commands::scan_projects,
             commands::git_status,
             commands::list_processes,
+            commands::list_system_processes,
             commands::list_ports,
             commands::terminate_process,
             commands::system_metrics,

@@ -54,21 +54,17 @@ export function Sidebar() {
     <aside
       className={cn(
         "flex h-full shrink-0 flex-col border-r border-border bg-raised/70",
-        collapsed ? "w-[56px]" : "w-[212px]",
+        collapsed ? "w-14" : "w-[168px] min-[900px]:w-[200px]",
       )}
     >
       <div className={cn("flex h-12 items-center px-3", collapsed ? "justify-center" : "justify-between")}>
         {!collapsed ? (
           <div className="flex items-center gap-2">
-            <span className="flex size-6 items-center justify-center rounded bg-primary/15 font-mono text-[11px] font-medium text-primary">
-              D
-            </span>
+            <img src="/app-icon.png" alt="" className="size-6 rounded" />
             <span className="text-[13px] font-semibold tracking-tight">DevDeck</span>
           </div>
         ) : (
-          <span className="flex size-6 items-center justify-center rounded bg-primary/15 font-mono text-[11px] font-medium text-primary">
-            D
-          </span>
+          <img src="/app-icon.png" alt="DevDeck" className="size-6 rounded" />
         )}
         {!collapsed ? (
           <IconButton label="Collapse sidebar" onClick={toggle}>

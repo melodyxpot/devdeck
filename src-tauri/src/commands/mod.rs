@@ -47,6 +47,11 @@ pub fn list_processes() -> Vec<processes::ProcessRow> {
 }
 
 #[tauri::command]
+pub fn list_system_processes(limit: Option<u32>) -> Vec<processes::ProcessRow> {
+    processes::list_system_processes(limit.unwrap_or(12) as usize)
+}
+
+#[tauri::command]
 pub fn list_ports() -> Vec<processes::ports::PortRow> {
     processes::ports::listen()
 }

@@ -293,6 +293,14 @@ export interface SystemMetrics {
   battery: number | null;
 }
 
+export interface HostTelemetry {
+  live: boolean;
+  error: string | null;
+  metrics: SystemMetrics;
+  systemProcesses: DevProcess[];
+  processHistory: Record<number, number[]>;
+}
+
 export interface InstalledTool {
   id: string;
   name: string;

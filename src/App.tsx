@@ -10,6 +10,8 @@ import { ConfirmDialog } from "@/components/overlays/confirm-dialog";
 import { LoadingState } from "@/components/states/loading-state";
 import { OnboardingPage } from "@/pages/onboarding-page";
 import { useGlobalHotkeys } from "@/hooks/use-hotkeys";
+import { useHostTelemetryPoller } from "@/hooks/use-host-telemetry";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAppStore } from "@/stores/app-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { workspace } from "@/services/workspace";
@@ -37,7 +39,14 @@ export default function App() {
   const route = useAppStore((state) => state.route);
   const onboarded = useSettingsStore((state) => state.settings.onboardingComplete);
   const clipboardHistory = useSettingsStore((state) => state.settings.clipboardHistory);
+  const setSidebarCollapsed = useAppStore((state) => state.setSidebarCollapsed);
+  const narrow = useMediaQuery("(max-width: 860px)");
   useGlobalHotkeys();
+  useHostTelemetryPoller();
+
+  useEffect(() => {
+    if (narrow) setSidebarCollapsed(true);
+  }, [narrow, setSidebarCollapsed]);
 
   useEffect(() => {
     if (!clipboardHistory || !navigator.clipboard?.readText) return;
@@ -73,7 +82,7 @@ export default function App() {
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <TopBar />
-            <main className="min-h-0 flex-1 overflow-auto p-5">
+            <main className="min-h-0 flex-1 overflow-auto p-3 sm:p-5">
               <Suspense fallback={<LoadingState label="Loading view…" />}>
                 <Page />
               </Suspense>

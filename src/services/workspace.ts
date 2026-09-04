@@ -14,6 +14,7 @@ import {
   MOCK_PORTS,
   MOCK_PROCESSES,
   MOCK_PROJECTS,
+  MOCK_SYSTEM_PROCESSES,
   MOCK_PRS,
   MOCK_REPOS,
   MOCK_SNIPPETS,
@@ -38,8 +39,10 @@ import type {
   GithubIssue,
   GithubPullRequest,
   GithubRepo,
+  HostTelemetry,
   InstalledTool,
   ListeningPort,
+  ProcessStatus,
   Project,
   ProjectContext,
   Settings,
@@ -47,9 +50,12 @@ import type {
   SystemMetrics,
   TerminalSession,
 } from "@/types";
+import { invokeNative } from "@/services/tauri";
 import { categorizeClipboard, clipboardPreview } from "@/utils/clipboard";
 import { compareEnvKeys } from "@/utils/env";
 import { isSafeUserPath } from "@/utils/paths";
+import { walkRate } from "@/utils/network";
+import { appendSample } from "@/utils/processes";
 
 interface WorkspaceState {
   projects: Project[];
@@ -65,6 +71,7 @@ interface WorkspaceState {
   terminals: TerminalSession[];
   terminalOutput: Record<string, string>;
   githubConnected: boolean;
+  telemetry: HostTelemetry;
 }
 
 function clone<T>(value: T): T {
@@ -90,7 +97,91 @@ function createState(): WorkspaceState {
     terminals: clone(MOCK_TERMINALS),
     terminalOutput: clone(MOCK_TERMINAL_OUTPUT),
     githubConnected: false,
+    telemetry: createTelemetry(),
   };
+}
+
+function createTelemetry(): HostTelemetry {
+  return {
+    live: false,
+    error: null,
+    metrics: clone(MOCK_METRICS),
+    systemProcesses: clone(MOCK_SYSTEM_PROCESSES),
+    processHistory: Object.fromEntries(
+      MOCK_SYSTEM_PROCESSES.map((process) => [process.pid, [process.cpu]]),
+    ),
+  };
+}
+
+interface NativeProcessRow {
+  pid: number;
+  name: string;
+  command: string;
+  cpu: number;
+  memoryMb?: number;
+  memory_mb?: number;
+  status?: string;
+}
+
+interface NativeMetrics {
+  cpu: number;
+  memoryUsedGb?: number;
+  memory_used_gb?: number;
+  memoryTotalGb?: number;
+  memory_total_gb?: number;
+  diskUsedGb?: number;
+  disk_used_gb?: number;
+  diskTotalGb?: number;
+  disk_total_gb?: number;
+  networkDownKbps?: number;
+  network_down_kbps?: number;
+  networkUpKbps?: number;
+  network_up_kbps?: number;
+  battery: number | null;
+}
+
+function readNumber(...values: Array<number | undefined>): number {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function mapNativeProcess(row: NativeProcessRow): DevProcess {
+  const status = row.status;
+  const allowed: ProcessStatus[] = ["running", "sleeping", "idle", "stopped"];
+  return {
+    pid: row.pid,
+    name: row.name,
+    command: row.command || row.name,
+    cpu: row.cpu,
+    memoryMb: readNumber(row.memoryMb, row.memory_mb),
+    port: null,
+    projectId: null,
+    projectName: null,
+    status: status && allowed.includes(status as ProcessStatus) ? (status as ProcessStatus) : "running",
+    path: null,
+  };
+}
+
+function mapNativeMetrics(row: NativeMetrics): SystemMetrics {
+  return {
+    cpu: row.cpu,
+    memoryUsedGb: readNumber(row.memoryUsedGb, row.memory_used_gb),
+    memoryTotalGb: readNumber(row.memoryTotalGb, row.memory_total_gb) || 1,
+    diskUsedGb: readNumber(row.diskUsedGb, row.disk_used_gb),
+    diskTotalGb: readNumber(row.diskTotalGb, row.disk_total_gb) || 1,
+    networkDownKbps: readNumber(row.networkDownKbps, row.network_down_kbps),
+    networkUpKbps: readNumber(row.networkUpKbps, row.network_up_kbps),
+    battery: row.battery,
+  };
+}
+
+function jitterMockProcesses(processes: DevProcess[]): DevProcess[] {
+  return processes.map((process) => ({
+    ...process,
+    cpu: Math.round(walkRate(process.cpu, 0.1, 42, Math.max(0.4, process.cpu * 0.18)) * 10) / 10,
+  }));
 }
 
 class Workspace {
@@ -206,6 +297,61 @@ class Workspace {
 
   processes(): DevProcess[] {
     return this.state.processes;
+  }
+
+  systemProcesses(): DevProcess[] {
+    return this.state.telemetry.systemProcesses;
+  }
+
+  telemetry(): HostTelemetry {
+    return this.state.telemetry;
+  }
+
+  async refreshTelemetry(settings: Settings): Promise<void> {
+    if (usesLiveNative(settings)) {
+      try {
+        const [metricsRow, processRows] = await Promise.all([
+          invokeNative<NativeMetrics>("system_metrics"),
+          invokeNative<NativeProcessRow[]>("list_system_processes", { limit: 12 }),
+        ]);
+        if (!metricsRow || !processRows) {
+          throw new Error("The host did not return system telemetry.");
+        }
+        const systemProcesses = processRows.map(mapNativeProcess);
+        this.state.telemetry = {
+          live: true,
+          error: null,
+          metrics: mapNativeMetrics(metricsRow),
+          systemProcesses,
+          processHistory: mergeProcessHistory(this.state.telemetry.processHistory, systemProcesses),
+        };
+        this.emit();
+      } catch (error) {
+        this.state.telemetry = {
+          ...this.state.telemetry,
+          live: false,
+          error: error instanceof Error ? error.message : "Unable to read host telemetry.",
+        };
+        this.emit();
+      }
+      return;
+    }
+
+    const systemProcesses = jitterMockProcesses(this.state.telemetry.systemProcesses);
+    const metrics = this.state.telemetry.metrics;
+    this.state.telemetry = {
+      live: false,
+      error: null,
+      metrics: {
+        ...metrics,
+        cpu: walkRate(metrics.cpu, 8, 72, 4),
+        networkDownKbps: walkRate(metrics.networkDownKbps, 40, 2400, 180),
+        networkUpKbps: walkRate(metrics.networkUpKbps, 8, 420, 36),
+      },
+      systemProcesses,
+      processHistory: mergeProcessHistory(this.state.telemetry.processHistory, systemProcesses),
+    };
+    this.emit();
   }
 
   killProcess(pid: number, confirmed: boolean): void {
@@ -418,10 +564,7 @@ class Workspace {
   }
 
   metrics(): SystemMetrics {
-    return {
-      ...MOCK_METRICS,
-      cpu: Math.max(8, Math.min(72, MOCK_METRICS.cpu + (Math.random() * 6 - 3))),
-    };
+    return this.state.telemetry.metrics;
   }
 
   tools(): InstalledTool[] {
@@ -474,6 +617,17 @@ class Workspace {
 }
 
 export const workspace = new Workspace();
+
+function mergeProcessHistory(
+  current: Record<number, number[]>,
+  processes: DevProcess[],
+): Record<number, number[]> {
+  const next: Record<number, number[]> = {};
+  for (const process of processes) {
+    next[process.pid] = appendSample(current[process.pid] ?? [], process.cpu);
+  }
+  return next;
+}
 
 export function usesLiveNative(settings: Settings): boolean {
   return isTauri() && !settings.useMockData;

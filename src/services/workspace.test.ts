@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { workspace } from "@/services/workspace";
 import { DevDeckError } from "@/lib/errors";
+import { DEFAULT_SETTINGS } from "@/data/mock";
 
 describe("workspace state", () => {
   beforeEach(() => {
@@ -31,4 +32,15 @@ describe("workspace state", () => {
   it("rejects unsafe directories", () => {
     expect(() => workspace.addDirectory("../etc")).toThrow(DevDeckError);
   });
+
+  it("refreshes sample telemetry without pretending the host answered", async () => {
+    const before = workspace.revision();
+    await workspace.refreshTelemetry({ ...DEFAULT_SETTINGS, useMockData: true });
+    const snapshot = workspace.telemetry();
+    expect(workspace.revision()).toBeGreaterThan(before);
+    expect(snapshot.live).toBe(false);
+    expect(snapshot.systemProcesses.length).toBeGreaterThan(0);
+    expect(snapshot.metrics.networkDownKbps).toBeGreaterThan(0);
+  });
 });
+

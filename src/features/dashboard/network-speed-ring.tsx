@@ -57,7 +57,7 @@ export function NetworkSpeedRing({
 
   return (
     <div
-      className={compact ? "relative size-9 shrink-0" : "relative mx-auto size-[168px] max-w-full"}
+      className={compact ? "relative size-10 shrink-0" : "relative mx-auto size-[168px] max-w-full"}
       role="img"
       aria-label={`Network ${formatKbps(downKbps)} down, ${formatKbps(upKbps)} up`}
     >
@@ -73,7 +73,7 @@ export function NetworkSpeedRing({
         )}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className={compact ? "font-mono text-[9px] leading-none tracking-tight" : "font-mono text-[22px] leading-none tracking-tight"}>
+        <span className={compact ? "font-mono text-[10px] leading-none tracking-tight text-primary" : "font-mono text-[22px] leading-none tracking-tight"}>
           {label}
         </span>
         {compact ? null : (
